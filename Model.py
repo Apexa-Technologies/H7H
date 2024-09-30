@@ -32,7 +32,7 @@ class LSTM_Q_Net(nn.Module):
 
 
     def save(self, file_name):
-        model_folder_path = './model'
+        model_folder_path = './model/'
         if not os.path.exists(model_folder_path):
             os.makedirs(model_folder_path)
 
@@ -51,7 +51,6 @@ class QTrainer:
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=2, gamma=0.5)
         self.criterion = nn.MSELoss()
         self.batch_size = BATCH_SIZE
-
         self.input_size = input_size
         self.window_size = window_size
 

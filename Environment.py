@@ -24,7 +24,7 @@ class Environment:
         self.sell_signals = []
         self.exit_signals = []
 
-        self.first_rendering = False
+        self.first_rendering = True
 
         #########################################################################################################################################
 
@@ -58,7 +58,6 @@ class Environment:
         self.sell_scatter = self.ax_price.scatter([], [], marker='v', color='red', label='Sell', s=50)
         self.exit_scatter = self.ax_price.scatter([], [], marker='x', color='black', label='exit', s=50)
 
-
         self.ax_price.grid(True)
 
         #########################################################################################################################################
@@ -86,13 +85,13 @@ class Environment:
         profit, executed = self.execute(action)
         done = self.step + self.window_size >= len(self.data)
 
+        self.realized_pnl += profit
+
         self.realized_pnl_history.append(self.realized_pnl)
         self.trade_profit_history.append(profit)
 
         self.unrealized_pnl = (self.pnl())
         self.unrealized_pnl_history.append(self.unrealized_pnl)
-
-        self.realized_pnl_history.append(self.realized_pnl)
 
         self.data['Unrealized'] = self.unrealized_pnl
         self.data['Realized'] = self.realized_pnl
@@ -119,7 +118,7 @@ class Environment:
             self.short_entry(current_time)
             executed = 1
 
-        elif action == 3: # Exit
+        elif action == 3 and len(self.positions) > 0: # Exit
             profit = self.exit(current_time)
             executed = 2
 
@@ -214,16 +213,36 @@ class Environment:
         self.sell_signals = []
         self.exit_signals = []
 
-        self.first_rendering = False
+        self.first_rendering = True
 
         columns_to_fill = ['Unrealized', 'Realized', 'longs', 'shorts']
         self.data[columns_to_fill] = self.data[columns_to_fill].fillna(0)
+
+        # Reinitialize the plots
+        self.ax_price.cla()
+        self.ax_pnl.cla()
+
+        self.ax_price.set_title('Price')
+        self.ax_price.set_xlabel('Time')
+        self.ax_price.set_ylabel('Price', color='blue')
+
+        self.ax_pnl.set_ylabel('PnL', color='green')
+
+        self.ax_price.grid(True)
+
+        # Reinitialize plot lines and scatter points
+        self.line_unrealized_pnl, = self.ax_pnl.plot([], [], color='blue', label='Unrealized PnL')
+        self.line_realized_pnl, = self.ax_pnl.plot([], [], color='green', label='Realized PnL')
+        self.line_price, = self.ax_price.plot([], [], color='black', label='Close Price')
+
+        self.buy_scatter = self.ax_price.scatter([], [], marker='^', color='green', label='Buy', s=50)
+        self.sell_scatter = self.ax_price.scatter([], [], marker='v', color='red', label='Sell', s=50)
+        self.exit_scatter = self.ax_price.scatter([], [], marker='x', color='black', label='exit', s=50)
 
         return self.get_state()
 
     def close(self):
         plt.close(self.fig_price)
-        print("closing")
 
     def pnl(self):
         profit = 0
@@ -250,10 +269,8 @@ class Environment:
         for position in self.positions:
             profit += position.pnl(self.current_price)
 
-        print(f'exited, profit: {profit}')
-
         self.exit_signals.append((time, self.current_price))
-        self.realized_pnl += profit
+
         self.positions = []
         self.longs = 0
         self.shorts = 0

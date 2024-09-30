@@ -13,14 +13,14 @@ BATCH_SIZE = 64
 class Agent:
     def __init__(self, df, args):
         self.args = args
-        self.window_size = 30
-        self.epsilon = 0.5
-        self.gamma = 0.95
+        self.window_size = 60
+        self.epsilon = 0.9
+        self.gamma = 0.98
 
-        self.lr = 1
+        self.lr = 0.25
 
-        self.input_size = 14 # Make Dynamic
-        self.hidden_size = 64
+        self.input_size = df.shape[1] + 4
+        self.hidden_size = 15
         self.output_size = 4
 
         self.realized_pnl = 0
@@ -41,28 +41,42 @@ class Agent:
 
     def run(self, epochs):
         for epoch in range(epochs):
-            print(f"Epoch {epoch + 1}")
             state0 = self.reset()
             done = False
 
             total_reward = 0
+            total_profit = 0
+            self.last_trade = 0
+            self.losing_streak = 0
+            best = 0
             
             while not done:
                 action0 = self.get_action(state0)
 
                 state1, profit, executed, done = self.environment.forward(action0)
-
-                reward = self.calculate_reward(profit, executed)
                 self.last_trade += 1
-                self.store_experience(state1, action0, reward, state1, done)
+
+                if executed == 2:
+                    self.last_trade = 0
+
+                reward = self.calculate_reward(profit)
+
+                self.store_experience(state0, action0, reward, state1, done)
                 self.train()
+
                 total_reward += reward
-                time.sleep(0.01)
+                total_profit += profit
             
+
             self.environment.close()
+
+            if total_profit > best:
+                self.save(epoch)
+                best = total_profit
+
             self.update_epsilon()
-            self.save(epoch)
-            print(f"\nEpoch: {epoch}\nReward: {total_reward}")
+            print(f"\nEpoch: {epoch}\nReward: {total_reward}\nProfit: {total_profit}")
+            time.sleep(0.01)
 
     def train(self):
         if len(self.memory) < BATCH_SIZE:
@@ -75,12 +89,12 @@ class Agent:
         states = torch.tensor(np.array(states), dtype=torch.float32).to(device).view(BATCH_SIZE, self.window_size, self.input_size)
         next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(device).view(BATCH_SIZE, self.window_size, self.input_size)
         actions = torch.tensor(actions, dtype=torch.long).to(device)
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
+        rewards = torch.tensor(rewards, dtype=torch.float16).to(device)
         dones = torch.tensor(dones, dtype=torch.bool).to(device)
 
         self.trainer.train_step(states, actions, rewards, next_states, dones)
     
-    def calculate_reward(self, profit, executed):
+    def calculate_reward(self, profit):
         reward = 0
         if profit is None:
             profit = 0
@@ -106,10 +120,12 @@ class Agent:
 
             if self.losing_streak >= 5:
                 self.losing_streak = 0
-                reward += -15
-
-        if executed == 2:
-            self.last_trade = 0
+                reward += -20
+        
+        if profit == 0:
+            reward += -5
+            self.winning_streak = 0
+            self.losing_streak = 0
         
         if self.last_trade >= 60:
             print("penalized")
@@ -119,11 +135,12 @@ class Agent:
         return reward
 
     def get_action(self, state):
-        #state_tensor = torch.from_numpy(state).unsqueeze(0).to(device)
-        state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
-        q_values = self.model.forward(state_tensor)
-        #print(torch.tensor(q_values).numpy())
-        return torch.argmax(q_values).item()
+        if np.random.rand() < self.epsilon:
+            return np.random.randint(self.output_size)
+        else:
+            state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+            q_values = self.model.forward(state_tensor)
+            return torch.argmax(q_values).item()
 
     #########################################################################################################################################
 
@@ -147,7 +164,8 @@ class Agent:
         return mini_batch
 
     def update_epsilon(self):
-        self.epsilon = max(0.01, self.epsilon * 0.99)  # Faster decay
+        self.epsilon = max(0.01, self.epsilon * 0.98)  # Faster decay
+        print(f"New Epsilon: {self.epsilon}")
 
     def reset(self):
         self.realized_pnl = 0
